@@ -1,13 +1,20 @@
 from collections import UserDict
 from typing import List
+from datetime import datetime, timedelta
 
 
 class Field:
-    def __init__(self, value: str):
+    def __init__(self, value):
         self.value = value
+
+        if not self.is_valid():
+            raise ValueError
 
     def __str__(self):
         return str(self.value)
+
+    def is_valid(self):
+        return True
 
 
 class Name(Field):
@@ -15,23 +22,27 @@ class Name(Field):
 
 
 class Phone(Field):
-    def __init__(self, value: str):
-        super().__init__(value)
-
-        if not self.is_valid():
-            raise ValueError
-
     def is_valid(self):
         return len(self.value) == 10 and self.value.isdigit()
+
+
+class Birthday(Field):
+    def __init__(self, value: str):
+        try:
+            super().__init__(datetime.strptime(value, "%d.%m.%Y").date())
+        except ValueError:
+            raise ValueError("Invalid date format. Use DD.MM.YYYY")
 
 
 class Record:
     def __init__(self, name: str):
         self.name = Name(name)
         self.phones: List[Phone] = []
+        self.birthday: Birthday | None = None
 
     def __str__(self):
-        return f"Contact name: {self.name}, phones: {"; ".join(list(map(lambda phone: str(phone), self.phones)))}"
+        return (f"Contact name: {self.name}, phones: {"; ".join(list(map(lambda phone: str(phone), self.phones)))}, "
+                f"birthday: {self.birthday}")
 
     def __find_phone_index__(self, phone_str):
         phone_index = None
@@ -69,6 +80,9 @@ class Record:
         else:
             return self.phones[phone_index]
 
+    def add_birthday(self, birthday: str):
+        self.birthday = Birthday(birthday)
+
 
 class AddressBook(UserDict[str, Record]):
     def __str__(self):
@@ -86,6 +100,27 @@ class AddressBook(UserDict[str, Record]):
     def delete(self, name: str):
         if name in self.data.keys():
             del self.data[name]
+
+    def get_upcoming_birthdays(self):
+        upcoming_birthdays = []
+        date_today = datetime.today().date()
+        date_today_plus_week = date_today + timedelta(days=7)
+
+        for record in self.data.values():
+            birthday = record.birthday.value.replace(year=date_today.year)
+
+            if date_today.timetuple().tm_yday <= birthday.timetuple().tm_yday <= date_today_plus_week.timetuple().tm_yday:
+                birthday_day_of_week = birthday.timetuple().tm_wday
+                congratulation_date = birthday
+
+                if birthday_day_of_week == 5 or birthday_day_of_week == 6:
+                    next_monday = birthday + timedelta(days=7 - birthday.timetuple().tm_wday)
+                    congratulation_date = next_monday
+
+                upcoming_birthdays.append(
+                    {"name": record.name.value, "congratulation_date": congratulation_date.strftime("%d.%m.%Y")})
+
+        return upcoming_birthdays
 
 
 def input_error(func):
@@ -141,7 +176,7 @@ def change_phone(args: List[str], book: AddressBook):
 
 
 @input_error
-def get_phones(args: list[str], book: AddressBook):
+def get_phones(args: List[str], book: AddressBook):
     name = args[0]
     record = book.find(name)
 
@@ -156,6 +191,41 @@ def get_all_contacts(book: AddressBook):
         return "Contacts list is empty."
 
     return book
+
+
+@input_error
+def add_birthday(args, book: AddressBook):
+    name, birthday = args
+    record = book.find(name)
+
+    if not record:
+        record = Record(name)
+        book.add_record(record)
+
+    record.add_birthday(birthday)
+
+    return "Birthday added."
+
+
+@input_error
+def show_birthday(args, book: AddressBook):
+    name = args[0]
+    record = book.find(name)
+
+    if not record:
+        return f"{name} doesn't exist."
+
+    if not record.birthday:
+        return f"{name} doesn't have birthday."
+
+    return record.birthday
+
+
+def birthdays(book: AddressBook):
+    if len(book.data) == 0:
+        return "Contacts list is empty."
+
+    return book.get_upcoming_birthdays()
 
 
 def get_good_bye():
@@ -178,6 +248,12 @@ def main():
             print(change_phone(args, book))
         elif cmd == "phone":
             print(get_phones(args, book))
+        elif cmd == "add-birthday":
+            print(add_birthday(args, book))
+        elif cmd == "show-birthday":
+            print(show_birthday(args, book))
+        elif cmd == "birthdays":
+            print(birthdays(book))
         elif cmd == "all":
             print(get_all_contacts(book))
         elif cmd == "close" or cmd == "exit":
